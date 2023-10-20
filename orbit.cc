@@ -1,9 +1,42 @@
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
+#define ORDERED_CONTAINERS
+
+#ifdef ORDERED_CONTAINERS
+#include <map>
+#include <set>
+
+#define STD_MAP_TYPE std::map
+#define STD_SET_TYPE std::set
+#else
 #include <unordered_map>
+#include <unordered_set>
+#define STD_MAP_TYPE std::unordered_map
+#define STD_SET_TYPE std::unordered_set
+#endif
+
+template <class T>
+void EnumerateBitPermutations(unsigned n, unsigned k, const T &t) {
+  uint64_t bitperm = (uint64_t(1) << k) - 1;
+  uint64_t endval = bitperm << (n - k);
+
+  for (;;) {
+    if (!t(bitperm)) return;
+    if (bitperm == endval) break;
+
+    /* These next two lines of code efficiently compute the lexicographically next bit
+       permutation. This is from the famous "bit-twiddling hacks" by Sean Eron Anderson at
+       Stanford University, which are in the public domain. Credit is given to acknowledge
+       that this method is not original work.
+    */
+    uint64_t t = bitperm | (bitperm - 1);
+    bitperm = (t + 1) | (((~t & -~t) - 1) >> (__builtin_ctzl(bitperm) + 1));
+  }
+}
 
 /*
  * Each bit element represents an edge
@@ -88,7 +121,7 @@ static uint64_t SortNibbles(uint64_t word) {
   return output;
 }
 
-std::unordered_map<uint64_t, uint64_t> itemcounts;
+STD_MAP_TYPE<uint64_t, uint64_t> itemcounts;
 
 static uint64_t CountEdges(uint64_t x) {
   uint64_t val = edge_counts[0][x % 512].val;
@@ -98,9 +131,159 @@ static uint64_t CountEdges(uint64_t x) {
   val += edge_counts[2][x % 512].val;
   x >>= 9;
   val += edge_counts[3][x % 512].val;
-  val = SortNibbles(val);
-  ++itemcounts[val];
+  uint64_t sorted_val = SortNibbles(val);
+  ++itemcounts[sorted_val];
   return val;
+}
+
+struct TriangleCount {
+  uint64_t val[3];
+  /* 84 triangles times 2-bits each */
+  void IncTriangle(unsigned tr) {
+    div_t res = div(tr, 32);
+    val[res.quot] += (uint64_t(1) << (2 * res.rem));
+  }
+  TriangleCount &operator+=(const TriangleCount &rhs) {
+    val[0] += rhs.val[0];
+    val[1] += rhs.val[1];
+    val[2] += rhs.val[2];
+    return *this;
+  }
+  TriangleCount &operator&=(const TriangleCount &rhs) {
+    val[0] &= rhs.val[0];
+    val[1] &= rhs.val[1];
+    val[2] &= rhs.val[2];
+    return *this;
+  }
+
+  void MaskTriangles() {
+    for (uint64_t &v : val) {
+      v &= ((v >> 1) & 0x5555555555555555);
+    }
+  }
+  unsigned CountTriangles() const {
+    return __builtin_popcountl(val[0]) + __builtin_popcountl(val[1]) +
+           __builtin_popcountl(val[2]);
+  }
+};
+
+static TriangleCount triangle_node_mask[9] = {0};
+static TriangleCount triangle_counts[4][512] = {0};
+
+static TriangleCount CountTriangles(uint64_t x) {
+  TriangleCount res = {0};
+  res += triangle_counts[0][x % 512];
+  x >>= 9;
+  res += triangle_counts[1][x % 512];
+  x >>= 9;
+  res += triangle_counts[2][x % 512];
+  x >>= 9;
+  res += triangle_counts[3][x % 512];
+
+  res.MaskTriangles();
+  return res;
+}
+
+static void MakeTriangleTable() {
+  STD_MAP_TYPE<uint64_t, STD_SET_TYPE<unsigned>> triangles;
+  EnumerateBitPermutations(36, 3, [&](uint64_t bitperm) {
+    if (SortNibbles(CountEdges(bitperm)) == 0x222) {
+      triangles.emplace(bitperm, STD_SET_TYPE<unsigned>());
+    }
+    return true;
+  });
+  int n = 0;
+  for (auto &tr : triangles) {
+    EdgeCount ec{CountEdges(tr.first)};
+    for (unsigned i = 0; i < 9; ++i) {
+      if (ec.get(i) != 0) tr.second.insert(i);
+    }
+  }
+
+  unsigned tr_index = 0;
+  for (const auto tr : triangles) {
+    assert(tr.second.size() == 3);
+    for (unsigned from = 0; from < 9; ++from) {
+      for (unsigned to = from + 1; to < 9; ++to) {
+        if (tr.second.find(from) != tr.second.end() &&
+            tr.second.find(to) != tr.second.end()) {
+          triangle_node_mask[from].IncTriangle(tr_index);
+          triangle_node_mask[to].IncTriangle(tr_index);
+        }
+      }
+    }
+    ++tr_index;
+  }
+  for (auto &tr : triangle_node_mask) {
+    for (unsigned index = 0; index < 84; ++index) tr.IncTriangle(index);
+    tr.MaskTriangles();
+  }
+
+  for (const auto &tr : triangle_node_mask) assert(tr.CountTriangles() == 28);
+
+  for (unsigned i = 0; i < 4; ++i) {
+    for (unsigned j = 0; j < 512; ++j) {
+      TriangleCount &tc = triangle_counts[i][j];
+      unsigned k = 0;
+      for (unsigned mask = 1; mask < 512; mask <<= 1) {
+        BitElement &be = bit_elements[i * 9 + k];
+        if (j & mask) {
+          unsigned tr_index = 0;
+          unsigned found = 0;
+          for (const auto tr : triangles) {
+            if (tr.second.find(be.from_node) != tr.second.end() &&
+                tr.second.find(be.to_node) != tr.second.end()) {
+              tc.IncTriangle(tr_index);
+              ++found;
+            }
+            ++tr_index;
+          }
+          assert(found == 7);
+        }
+        ++k;
+      }
+    }
+  }
+}
+
+void TestTriangleTable() {
+  /* Test individual triangles */
+  EnumerateBitPermutations(36, 3, [&](uint64_t bitperm) {
+    uint64_t val = SortNibbles(CountEdges(bitperm));
+    TriangleCount tc = CountTriangles(bitperm);
+    unsigned num = tc.CountTriangles();
+    if (val == 0x222) {
+      assert(num == 1); /* it is a triangle */
+      EdgeCount ec{CountEdges(bitperm)};
+      for (unsigned node = 0; node < 9; ++node) {
+        TriangleCount t = tc;
+        t &= triangle_node_mask[node];
+        unsigned count = t.CountTriangles();
+        assert(ec.get(node) / 2 == count);
+      }
+    } else {
+      assert(num == 0);
+    }
+    return true;
+  });
+
+  /* Test tetrahedra */
+  EnumerateBitPermutations(36, 6, [&](uint64_t bitperm) {
+    uint64_t val = SortNibbles(CountEdges(bitperm));
+    if (val == 0x3333) {
+      TriangleCount tc = CountTriangles(bitperm);
+      unsigned num = tc.CountTriangles();
+      assert(num == 4); /* it is a tetrahedron */
+      EdgeCount ec{CountEdges(bitperm)};
+      for (unsigned node = 0; node < 9; ++node) {
+        TriangleCount t = tc;
+        t &= triangle_node_mask[node];
+        unsigned count = t.CountTriangles();
+        assert(ec.get(node) == count);
+      }
+    }
+    return true;
+  });
 }
 
 int main(int argc, char *argv[]) {
@@ -122,30 +305,22 @@ int main(int argc, char *argv[]) {
   MakeBitElements();
   MakeEdgeCountTables();
   MakeNibbleCountTable();
+  MakeTriangleTable();
+  TestTriangleTable();
 
-  uint64_t bitperm = (uint64_t(1) << k) - 1;
-  uint64_t endval = bitperm << (n - k);
-
+  itemcounts.clear();
   uint64_t count = 0;
   time_t start = time(nullptr);
-  for (;;) {
+  EnumerateBitPermutations(n, k, [&](uint64_t bitperm) {
     ++count;
 
     EdgeCount ec{CountEdges(bitperm)};
-    if (bitperm == endval) break;
-
-    /* These next two lines of code efficiently compute the lexicographically next bit
-       permutation. This is from the famous "bit-twiddling hacks" by Sean Eron Anderson at
-       Stanford University, which are in the public domain. Credit is given to acknowledge
-       that this method is not original work.
-    */
-    uint64_t t = bitperm | (bitperm - 1);
-    bitperm = (t + 1) | (((~t & -~t) - 1) >> (__builtin_ctzl(bitperm) + 1));
-  }
+    return true;
+  });
   time_t finish = time(nullptr);
   printf("count: %ld in %d seconds\n", count, (int)(finish - start));
   printf("itemcounts: %lu\n", itemcounts.size());
-  std::unordered_map<unsigned, unsigned> validate;
+  STD_MAP_TYPE<unsigned, unsigned> validate;
   for (const auto &val : itemcounts) {
     EdgeCount ec{val.first};
     unsigned sum = 0;
