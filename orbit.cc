@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define ORDERED_CONTAINERS
+//#define ORDERED_CONTAINERS
 
 #ifdef ORDERED_CONTAINERS
 #include <map>
@@ -121,8 +121,6 @@ static uint64_t SortNibbles(uint64_t word) {
   return output;
 }
 
-STD_MAP_TYPE<uint64_t, uint64_t> itemcounts;
-
 static uint64_t CountEdges(uint64_t x) {
   uint64_t val = edge_counts[0][x % 512].val;
   x >>= 9;
@@ -131,8 +129,6 @@ static uint64_t CountEdges(uint64_t x) {
   val += edge_counts[2][x % 512].val;
   x >>= 9;
   val += edge_counts[3][x % 512].val;
-  uint64_t sorted_val = SortNibbles(val);
-  ++itemcounts[sorted_val];
   return val;
 }
 
@@ -187,9 +183,8 @@ static TriangleCount CountTriangles(uint64_t x) {
 static void MakeTriangleTable() {
   STD_MAP_TYPE<uint64_t, STD_SET_TYPE<unsigned>> triangles;
   EnumerateBitPermutations(36, 3, [&](uint64_t bitperm) {
-    if (SortNibbles(CountEdges(bitperm)) == 0x222) {
+    if (SortNibbles(CountEdges(bitperm)) == 0x222)
       triangles.emplace(bitperm, STD_SET_TYPE<unsigned>());
-    }
     return true;
   });
   int n = 0;
@@ -286,6 +281,8 @@ void TestTriangleTable() {
   });
 }
 
+volatile unsigned output;
+
 int main(int argc, char *argv[]) {
   int k = -1, n = -1;
   if (argc > 1) n = atoi(argv[1]);
@@ -308,17 +305,29 @@ int main(int argc, char *argv[]) {
   MakeTriangleTable();
   TestTriangleTable();
 
-  itemcounts.clear();
+  // itemcounts.clear();
   uint64_t count = 0;
+  uint8_t vals[256] = {0};
   time_t start = time(nullptr);
   EnumerateBitPermutations(n, k, [&](uint64_t bitperm) {
     ++count;
-
     EdgeCount ec{CountEdges(bitperm)};
+    TriangleCount tc = CountTriangles(bitperm);
+    for (unsigned i = 0; i < 9; ++i) {
+      TriangleCount t = tc;
+      tc &= triangle_node_mask[i];
+      vals[tc.CountTriangles() * 10 + ec.get(i)] = 1;
+    }
     return true;
   });
   time_t finish = time(nullptr);
   printf("count: %ld in %d seconds\n", count, (int)(finish - start));
+  printf("ns per loop: %f\n",
+         double(finish - start) * double(1000000000) / double(count));
+  for (unsigned i = 0; i < 128; ++i)
+    if (vals[i] != 0) printf("%u ", i);
+  printf("\n");
+#if 0
   printf("itemcounts: %lu\n", itemcounts.size());
   STD_MAP_TYPE<unsigned, unsigned> validate;
   for (const auto &val : itemcounts) {
@@ -340,5 +349,6 @@ int main(int argc, char *argv[]) {
     printf("(%lu)\n", val.second);
     ++validate[sum];
   }
+#endif
   return 0;
 }
