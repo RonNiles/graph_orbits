@@ -281,7 +281,7 @@ void TestTriangleTable() {
   });
 }
 
-volatile unsigned output;
+volatile uint64_t item1;
 
 int main(int argc, char *argv[]) {
   int k = -1, n = -1;
@@ -305,30 +305,51 @@ int main(int argc, char *argv[]) {
   MakeTriangleTable();
   TestTriangleTable();
 
-  // itemcounts.clear();
+  STD_MAP_TYPE<uint64_t, uint64_t> itemcounts;
   uint64_t count = 0;
-  uint8_t vals[256] = {0};
   time_t start = time(nullptr);
   EnumerateBitPermutations(n, k, [&](uint64_t bitperm) {
     ++count;
     EdgeCount ec{CountEdges(bitperm)};
     TriangleCount tc = CountTriangles(bitperm);
+    uint8_t vals[128] = {0};
     for (unsigned i = 0; i < 9; ++i) {
       TriangleCount t = tc;
       tc &= triangle_node_mask[i];
-      vals[tc.CountTriangles() * 10 + ec.get(i)] = 1;
+      ++vals[tc.CountTriangles() * 10 + ec.get(i)];
     }
+    uint64_t item = 0;
+    for (unsigned i = 0; i < 128; ++i) {
+      uint8_t val = vals[i];
+      while (val) {
+        --val;
+        item <<= 7;
+        item += i;
+      }
+    }
+    ++itemcounts[item];
     return true;
   });
   time_t finish = time(nullptr);
   printf("count: %ld in %d seconds\n", count, (int)(finish - start));
   printf("ns per loop: %f\n",
          double(finish - start) * double(1000000000) / double(count));
-  for (unsigned i = 0; i < 128; ++i)
-    if (vals[i] != 0) printf("%u ", i);
-  printf("\n");
-#if 0
+  for (const auto &val : itemcounts) {
+    uint64_t count = val.first;
+    uint8_t stack[9];
+    for (int i = 0; i < 9; ++i) {
+      stack[i] = (count & 0x7f);
+      count >>= 7;
+    }
+    for (int i = 0; i < 9; ++i) {
+      printf("%u ", stack[8 - i]);
+    }
+    printf("(%ld)\n", val.second);
+  }
   printf("itemcounts: %lu\n", itemcounts.size());
+  printf("ns per loop: %f\n",
+         double(finish - start) * double(1000000000) / double(count));
+#if 0
   STD_MAP_TYPE<unsigned, unsigned> validate;
   for (const auto &val : itemcounts) {
     EdgeCount ec{val.first};
