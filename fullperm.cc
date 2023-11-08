@@ -64,6 +64,14 @@ char segment_table[][2] = {
     {'A', 'I'}, {'C', 'I'}, {'E', 'I'}, {'G', 'I'},
 };
 
+void PrintSegments(uint64_t bits) {
+  while (bits) {
+    unsigned bit = __builtin_ctzl(bits);
+    printf("%s ", std::string(segment_table[bit], 2).c_str());
+    bits ^= (uint64_t(1) << bit);
+  }
+};
+
 static uint64_t masks[8] = {0};
 
 /*
@@ -129,20 +137,12 @@ static void AnalyzeSegmentTable() {
   }
 
   /* Do a little test and printout */
-  auto print_segments = [&](uint64_t bits) {
-    while (bits) {
-      unsigned bit = __builtin_ctzl(bits);
-      printf("%s ", std::string(segment_table[bit], 2).c_str());
-      bits ^= (uint64_t(1) << bit);
-    }
-    printf("\n");
-  };
   uint64_t start = 0;
   start |= (uint64_t(1) << (index["AB"] - 1));
   start |= (uint64_t(1) << (index["AC"] - 1));
-  print_segments(start);
+  PrintSegments(start);
   uint64_t end = ApplySwap(start, 2);
-  print_segments(end);
+  PrintSegments(end);
 }
 
 class Orbits {
@@ -195,7 +195,11 @@ class Orbits {
       printf("Level %d\n", i + 1);
       NextImageOrbitLevel();
     }
-    for (const auto &item : orbit_sizes_) printf("%016lX; %u\n", item.first, item.second);
+    for (const auto &item : orbit_sizes_) {
+      printf("%016lX; %u ", item.first, item.second);
+      PrintSegments(item.first);
+      printf("\n");
+    }
   };
 
  private:
