@@ -16,7 +16,7 @@
 #include <vector>
 
 /* the initial set 1...n, specify n as "nsetsize" */
-unsigned nsetsize = 7;
+unsigned nsetsize = 8;
 
 static std::vector<unsigned char> swaps;
 
@@ -162,8 +162,9 @@ class Orbits {
      permutations to generate all of the orbit members , and then we remember the smallest
      representative and the size of the orbit for this member of the next level.
      */
-  void NextImageOrbitLevel(void) {
+  uint64_t NextImageOrbitLevel(void) {
     ++imagesize_;
+    uint64_t num_analyzed = 0;
     std::set<uint64_t> oldorbits = std::move(prevorbits_);
     prevorbits_.clear();
     for (uint64_t old : oldorbits) {
@@ -172,9 +173,11 @@ class Orbits {
         std::set<uint64_t> sorter;
         uint64_t next = mask | old;
         sorter.insert(next);
+        ++num_analyzed;
         for (const auto &s : swaps) {
           next = ApplySwap(next, s);
           sorter.insert(next);
+          ++num_analyzed;
         }
         if (prevorbits_.emplace(*sorter.begin()).second) {
           //          printf("found %016lX %lu\n",  *sorter.begin(), sorter.size());
@@ -182,6 +185,7 @@ class Orbits {
         }
       }
     }
+    return num_analyzed;
   }
 
   void FindImageOrbits(void) {
@@ -191,15 +195,22 @@ class Orbits {
     /* compute orbits for each possible image size. The final divide by two is because
       with no non-repeated elements in image it can only use at most half of the full
       image */
+    time_t start = time(nullptr);
+    time_t level_start = start;
     for (unsigned i = 0; i < nsetsize * (nsetsize - 1) / 2 / 2; ++i) {
       printf("Level %d\n", i + 1);
-      NextImageOrbitLevel();
+      uint64_t num_analyzed = NextImageOrbitLevel();
+      time_t now = time(nullptr);
+      printf("%u seconds for %lu analyzed\n", (unsigned)(now - level_start),
+             num_analyzed);
+      level_start = now;
     }
     for (const auto &item : orbit_sizes_) {
       printf("%016lX; %u ", item.first, item.second);
       PrintSegments(item.first);
       printf("\n");
     }
+    printf("%u seconds\n", (unsigned)(level_start - start));
   };
 
  private:
