@@ -225,7 +225,8 @@ class AdjacentSwapPermutation {
 };
 
 class LevelManager {
-public:
+ public:
+  LevelManager() { elements_.emplace(0); }
   void NextLevel() {
     std::set<uint64_t> old = std::move(elements_);
     elements_.clear();
@@ -239,9 +240,31 @@ public:
       }
     }
   }
-private:
-  void TestNewItem(uint64_t graph) {
 
+ private:
+  void TestNewItem(uint64_t graph) {
+    uint8_t edges[9];
+    uint8_t triangles[9];
+    uint8_t combined[9];
+    ec.Count(graph, edges);
+    tc.Count(graph, triangles);
+    for (int i = 0; i < sizeof(edges); ++i) combined[i] = 10 * triangles[i] + edges[i];
+
+    /* bubble sort */
+    int n = sizeof(combined);
+    do {
+      int new_n = 0;
+      for (int i = 1; i < n; ++i) {
+        if (combined[i - 1] < combined[i]) {
+          std::swap(combined[i - 1], combined[i]);
+          graph = mr_.ApplySwap(graph, i - 1);
+          new_n = i;
+        }
+      }
+      n = new_n;
+    } while (n > 2);
+    elements_.emplace(graph);
+    if (elements_.size() != 1) abort();
   }
   MachineRepresentation mr_;
   EdgeCount ec;
@@ -250,6 +273,9 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+  LevelManager lm;
+  lm.NextLevel();
+  return 0;
   MachineRepresentation mr;
   EdgeCount ec;
   TriangleCount tc;
