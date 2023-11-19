@@ -7,7 +7,7 @@ else
         CXXFLAGS +=-DDEBUG -O0 -g
 endif
 
-all: orbit fullperm nine-point-graphs
+all: orbit fullperm enumerate-graphs
 
 orbit: orbit.cc
 	g++ $(CXXFLAGS) -o orbit orbit.cc
@@ -15,8 +15,8 @@ orbit: orbit.cc
 fullperm: fullperm.cc
 	g++ $(CXXFLAGS) -o fullperm fullperm.cc
 
-nine-point-graphs: nine-point-graphs.cc
-	g++ $(CXXFLAGS) -o nine-point-graphs nine-point-graphs.cc
+enumerate-graphs: enumerate-graphs.cc
+	g++ $(CXXFLAGS) -o enumerate-graphs enumerate-graphs.cc
 
 clean:
-	rm -f orbit fullperm nine-point-graphs
+	rm -f orbit fullperm enumerate-graphs
