@@ -218,6 +218,7 @@ class AdjacentSwapPermutation {
     if (count_ == 0) return order_ > 2 ? (this + 1)->Next() + 1 : -1;
     return count_ > 0 ? count_ - 1 : -count_ - 1;
   }
+  int Order() const { return order_; }
 
  private:
   int order_;
@@ -263,8 +264,47 @@ class LevelManager {
       }
       n = new_n;
     } while (n > 2);
+
+    AdjacentSwapPermutation asp[9];
+    std::vector<int> bases;
+
+    uint64_t min_code = graph;
+    if (elements_.find(min_code) != elements_.end()) return;
+
+    for (int i = 0; i < 9; ++i) {
+      if (bases.empty() || combined[bases.back()] != combined[i]) bases.push_back(i);
+    }
+    if (combined[bases.back()] != 0) bases.push_back(sizeof(combined));
+    for (int i = 0; i < bases.size() - 1; ++i)
+      asp[bases[i]].Initialize(bases[i + 1] - bases[i]);
+    for (int i = 0; i < bases.size();) {
+      if (asp[bases[i]].Order() <= 1) {
+        bases.erase(bases.begin() + i);
+      } else {
+        ++i;
+      }
+    }
+
+    if (!bases.empty()) {
+      int p = bases.size() - 1;
+      for (;;) {
+        int col = bases[p];
+        for (;;) {
+          int swap = asp[col].Next();
+          if (swap < 0) {
+            graph = mr_.ApplySwap(graph, 0);
+            break;
+          }
+          graph = mr_.ApplySwap(graph, swap);
+          if (graph < min_code) {
+            min_code = graph;
+            if (elements_.find(min_code) != elements_.end()) return;
+          }
+        }
+      }
+    }
+
     elements_.emplace(graph);
-    if (elements_.size() != 1) abort();
   }
   MachineRepresentation mr_;
   EdgeCount ec;
