@@ -241,6 +241,7 @@ class LevelManager {
       }
     }
   }
+  size_t Size() const { return elements_.size(); }
 
  private:
   void TestNewItem(uint64_t graph) {
@@ -263,7 +264,7 @@ class LevelManager {
         }
       }
       n = new_n;
-    } while (n > 2);
+    } while (n > 1);
 
     AdjacentSwapPermutation asp[9];
     std::vector<int> bases;
@@ -277,6 +278,7 @@ class LevelManager {
     if (combined[bases.back()] != 0) bases.push_back(sizeof(combined));
     for (int i = 0; i < bases.size() - 1; ++i)
       asp[bases[i]].Initialize(bases[i + 1] - bases[i]);
+    bases.pop_back();
     for (int i = 0; i < bases.size();) {
       if (asp[bases[i]].Order() <= 1) {
         bases.erase(bases.begin() + i);
@@ -285,26 +287,30 @@ class LevelManager {
       }
     }
 
-    if (!bases.empty()) {
+    if (bases.empty()) {
+      elements_.emplace(graph);
+      return;
+    }
+    for (;;) {
       int p = bases.size() - 1;
-      for (;;) {
-        int col = bases[p];
-        for (;;) {
-          int swap = asp[col].Next();
-          if (swap < 0) {
-            graph = mr_.ApplySwap(graph, 0);
-            break;
-          }
-          graph = mr_.ApplySwap(graph, swap);
-          if (graph < min_code) {
-            min_code = graph;
-            if (elements_.find(min_code) != elements_.end()) return;
-          }
+      int col = bases[p];
+      int swap = asp[col].Next();
+      while (swap < 0) {
+        graph = mr_.ApplySwap(graph, col);
+        if (p == 0) {
+          elements_.insert(min_code);
+          return;
         }
+        --p;
+        col = bases[p];
+        swap = asp[col].Next();
+      }
+      graph = mr_.ApplySwap(graph, swap + col);
+      if (graph < min_code) {
+        min_code = graph;
+        if (elements_.find(min_code) != elements_.end()) return;
       }
     }
-
-    elements_.emplace(graph);
   }
   MachineRepresentation mr_;
   EdgeCount ec;
@@ -314,7 +320,10 @@ class LevelManager {
 
 int main(int argc, char *argv[]) {
   LevelManager lm;
-  lm.NextLevel();
+  for (int i = 0; i < 18; ++i) {
+    lm.NextLevel();
+    printf("Level %d count %lu\n", i, lm.Size());
+  }
   return 0;
   MachineRepresentation mr;
   EdgeCount ec;
