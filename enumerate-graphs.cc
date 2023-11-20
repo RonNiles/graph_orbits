@@ -5,11 +5,11 @@
 #include <algorithm>
 #include <map>
 #include <set>
-#include <unordered_set>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "btree_map.h"
 #include "btree_set.h"
 
 /**
@@ -246,14 +246,19 @@ class AdjacentSwapPermutation {
   int count_;
 };
 
+static constexpr uint64_t Factorial(uint64_t x) {
+  return x <= 1 ? 1 : x * Factorial(x - 1);
+}
+
 template <int N>
 class LevelManager {
  public:
-  LevelManager() { elements_.insert(0); }
+  LevelManager() { elements_[0] = 1; }
   void NextLevel() {
-    btree::btree_set<uint64_t> old = std::move(elements_);
+    ++level_;
+    btree::btree_map<uint64_t, unsigned> old = std::move(elements_);
     elements_.clear();
-    for (uint64_t graph : old) {
+    for (auto [graph, count] : old) {
       uint64_t mask = uint64_t(1);
       unsigned end_index = EndIndex<N>();
       for (unsigned i = 0; i < end_index; ++i) {
@@ -265,6 +270,28 @@ class LevelManager {
       }
     }
   }
+
+  void DumpElements() {
+    uint64_t total = 0;
+    for (auto [graph, count] : elements_) {
+      total += count;
+      printf("%016lX; %u %s\n", graph, count, mr_.Segments(graph).c_str());
+    }
+    uint64_t expected = 1;
+    if (level_) {
+      uint64_t num = N * (N - 1) / 2;
+      uint64_t denom = 1;
+      for (int i = 1; i <= level_; ++i) {
+        expected *= num;
+        expected /= denom;
+        ++denom;
+        --num;
+      }
+    }
+    printf("Total: %lu %lu\n", total, expected);
+    if (total != expected) abort();
+  }
+
   size_t Size() const { return elements_.size(); }
   unsigned MaxLevel() const { return N * (N - 1) / 4; }
 
@@ -304,7 +331,7 @@ class LevelManager {
 
     uint64_t min_code = graph;
     if (elements_.find(min_code) != elements_.end()) return;
-
+    std::set<uint64_t> all_codes;
     for (int i = 0; i < N; ++i) {
       if (bases.empty() || combined[bases.back()] != combined[i]) bases.push_back(i);
     }
@@ -312,8 +339,11 @@ class LevelManager {
     for (int i = 0; i < bases.size() - 1; ++i)
       asp[bases[i]].Initialize(bases[i + 1] - bases[i]);
     bases.pop_back();
+    int singletons = 0;
     for (int i = 0; i < bases.size();) {
-      if (asp[bases[i]].Order() <= 1) {
+      int order = asp[bases[i]].Order();
+      if (order <= 1) {
+        if (order == 1) ++singletons;
         bases.erase(bases.begin() + i);
       } else {
         ++i;
@@ -321,9 +351,11 @@ class LevelManager {
     }
 
     if (bases.empty()) {
-      elements_.insert(graph);
+      uint64_t val = Factorial(N) / Factorial(N - singletons);
+      elements_[graph] = val;
       return;
     }
+    all_codes.insert(graph);
     for (;;) {
       int p = bases.size() - 1;
       int col = bases[p];
@@ -331,7 +363,18 @@ class LevelManager {
       while (swap < 0) {
         graph = mr_.ApplySwap(graph, col);
         if (p == 0) {
-          elements_.insert(min_code);
+          uint64_t factor = Factorial(N);
+          int remain = N;
+          for (int base : bases) {
+            int order = asp[base].Order();
+            remain -= order;
+            factor /= Factorial(order);
+          }
+          remain -= singletons;
+          if (remain < 0) abort();
+          factor /= Factorial(remain);
+          elements_[min_code] = all_codes.size() * factor;
+
           //          printf("insert %lx\n", min_code);
           return;
         }
@@ -340,6 +383,7 @@ class LevelManager {
         swap = asp[col].Next();
       }
       graph = mr_.ApplySwap(graph, swap + col);
+      all_codes.insert(graph);
       if (graph < min_code) {
         min_code = graph;
         if (elements_.find(min_code) != elements_.end()) return;
@@ -349,7 +393,8 @@ class LevelManager {
   MachineRepresentation<N> mr_;
   EdgeCount<N> ec_;
   TriangleCount<N> tc_;
-  btree::btree_set<uint64_t> elements_;
+  unsigned level_ = 0;
+  btree::btree_map<uint64_t, unsigned> elements_;
 };
 
 int main(int argc, char *argv[]) {
@@ -365,12 +410,14 @@ int main(int argc, char *argv[]) {
 
   auto enumerate = [](auto *lm) {
     printf("Level 0 count %lu\n", lm->Size());
+    lm->DumpElements();
     time_t prev = time(nullptr);
     for (int i = 1; i <= lm->MaxLevel(); ++i) {
       lm->NextLevel();
       time_t now = time(nullptr);
       printf("Level %d count %lu elapsed %u\n", i, lm->Size(), unsigned(now - prev));
       prev = now;
+      lm->DumpElements();
     }
   };
   switch (num_nodes) {
