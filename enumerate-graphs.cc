@@ -5,9 +5,12 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#include "btree_set.h"
 
 /**
  * 1. machine representation
@@ -246,9 +249,9 @@ class AdjacentSwapPermutation {
 template <int N>
 class LevelManager {
  public:
-  LevelManager() { elements_.emplace(0); }
+  LevelManager() { elements_.insert(0); }
   void NextLevel() {
-    std::set<uint64_t> old = std::move(elements_);
+    btree::btree_set<uint64_t> old = std::move(elements_);
     elements_.clear();
     for (uint64_t graph : old) {
       uint64_t mask = uint64_t(1);
@@ -318,7 +321,7 @@ class LevelManager {
     }
 
     if (bases.empty()) {
-      elements_.emplace(graph);
+      elements_.insert(graph);
       return;
     }
     for (;;) {
@@ -346,7 +349,7 @@ class LevelManager {
   MachineRepresentation<N> mr_;
   EdgeCount<N> ec_;
   TriangleCount<N> tc_;
-  std::set<uint64_t> elements_;
+  btree::btree_set<uint64_t> elements_;
 };
 
 int main(int argc, char *argv[]) {
@@ -362,9 +365,12 @@ int main(int argc, char *argv[]) {
 
   auto enumerate = [](auto *lm) {
     printf("Level 0 count %lu\n", lm->Size());
+    time_t prev = time(nullptr);
     for (int i = 1; i <= lm->MaxLevel(); ++i) {
       lm->NextLevel();
-      printf("Level %d count %lu\n", i, lm->Size());
+      time_t now = time(nullptr);
+      printf("Level %d count %lu elapsed %u\n", i, lm->Size(), unsigned(now - prev));
+      prev = now;
     }
   };
   switch (num_nodes) {
