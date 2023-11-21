@@ -50,11 +50,44 @@ static constexpr unsigned EndIndex() {
   return index;
 }
 
+static constexpr uint64_t SegmentNodeMask(char ch) {
+  uint64_t ret = 0;
+  uint64_t mask = uint64_t(1) << 63;
+  for (const char *segment : segment_table) {
+    if (segment[0] == ch) ret |= mask;
+    mask >>= 1;
+  }
+  return ret;
+}
+
+static uint64_t segmasks[11] = {
+    SegmentNodeMask('A'), SegmentNodeMask('B'), SegmentNodeMask('C'),
+    SegmentNodeMask('D'), SegmentNodeMask('E'), SegmentNodeMask('F'),
+    SegmentNodeMask('G'), SegmentNodeMask('H'), SegmentNodeMask('I'),
+    SegmentNodeMask('J'), SegmentNodeMask('K')};
+
+static bool GraphIsGreater(uint64_t lhs, uint64_t rhs) {
+  for (uint64_t mask : segmasks) {
+    uint64_t l = mask & lhs;
+    uint64_t r = mask & rhs;
+    if (l > r) return true;
+    if (l < r) return false;
+  }
+  return false;
+}
+
+struct CompareGraph {
+  bool operator()(uint64_t a, uint64_t b) const {
+    if (a == b) return false;
+    return GraphIsGreater(a, b);
+  }
+};
+
 template <unsigned N>
 class MachineRepresentation {
  public:
   MachineRepresentation() {
-    int index = 0;
+    int index = 63;
     constexpr char endchar = 'A' + N;
     for (const char *segment : segment_table) {
       if (segment[0] != '\0') {
@@ -62,7 +95,7 @@ class MachineRepresentation {
         segment_bits_.emplace(std::string_view(segment, 2), index);
         bit_segments_.emplace(index, std::string_view(segment, 2));
       }
-      ++index;
+      --index;
     }
     BuildMasks();
   }
@@ -73,15 +106,16 @@ class MachineRepresentation {
   }
   std::string BitSegment(int bit) const { return std::string(segment_table[bit], 2); }
 
-  std::string Segments(uint64_t val) {
+  std::string Segments(uint64_t graph) {
     std::string s;
-    const char *sep = "";
-    while (val) {
-      int bit = __builtin_ctzl(val);
-      val &= ~(uint64_t(1) << bit);
-      s += sep;
-      s += BitSegment(bit);
-      sep = " ";
+    for (char ch = 'A'; ch < 'A' + N; ++ch) {
+      uint64_t val = graph & SegmentNodeMask(ch);
+      while (val) {
+        int bit = __builtin_clzl(val);
+        val &= ~(uint64_t(1) << (63 - bit));
+        s += " ";
+        s += BitSegment(bit);
+      }
     }
     return s;
   }
@@ -104,9 +138,9 @@ class MachineRepresentation {
  private:
   void BuildMasks() {
     std::map<std::string, int> index;
-    int idx = 0;
+    int idx = 65;
     for (const auto &t : segment_table) {
-      ++idx;
+      --idx;
       if (t[0] == '\0') continue;
       if (t[0] - 'A' >= N) continue;
       if (t[1] - 'A' >= N) continue;
@@ -115,9 +149,9 @@ class MachineRepresentation {
       std::swap(s[0], s[1]);
       index.emplace(s, idx);
     }
-    for (const auto &i : index) printf("%s: %d\n", i.first.c_str(), i.second);
+    // for (const auto &i : index) printf("%s: %d\n", i.first.c_str(), i.second);
     for (int i = 0; i < N - 1; ++i) {
-      printf("Swap %c<->%c\n", 'A' + i, 'B' + i);
+      // printf("Swap %c<->%c\n", 'A' + i, 'B' + i);
       uint64_t mask = 0;
       for (const auto &item : index) {
         std::string test(item.first);
@@ -135,12 +169,12 @@ class MachineRepresentation {
         if (diff < 0) {
           diff = -diff;
         } else {
-          printf("%d -> %d\n", index[test], item.second);
+          // printf("%d -> %d\n", index[test], item.second);
           mask |= uint64_t(1) << (index[test] - 1);
         }
         if (diff != i + 1) abort();
       }
-      printf("Mask for %d is %016lX\n", i + 1, mask);
+      // printf("Mask for %d is %016lX\n", i + 1, mask);
       masks_[i] = mask;
     }
   }
@@ -154,11 +188,11 @@ class EdgeCount {
  public:
   EdgeCount() {
     for (int i = 0; i < N; ++i) {
-      int bit = 0;
+      uint64_t bit = uint64_t(1) << 63;
       uint64_t mask = 0;
       for (const char *segment : segment_table) {
-        if (segment[0] == 'A' + i || segment[1] == 'A' + i) mask |= uint64_t(1) << bit;
-        ++bit;
+        if (segment[0] == 'A' + i || segment[1] == 'A' + i) mask |= bit;
+        bit >>= 1;
       }
       masks_[i] = mask;
     }
@@ -183,14 +217,14 @@ class TriangleCount {
           counts[v1 - 'A'] = 1;
           counts[v2 - 'A'] = 1;
           counts[v3 - 'A'] = 1;
-          uint64_t bit = 1;
+          uint64_t bit = uint64_t(1) << 63;
           for (const char *segment : segment_table) {
             if ((segment[0] == v1 && segment[1] == v2) ||
                 (segment[0] == v1 && segment[1] == v3) ||
                 (segment[0] == v2 && segment[1] == v3)) {
               triangles_.back().mask |= bit;
             }
-            bit <<= 1;
+            bit >>= 1;
           }
         }
       }
@@ -256,26 +290,45 @@ class LevelManager {
   LevelManager() { elements_[0] = 1; }
   void NextLevel() {
     ++level_;
-    btree::btree_map<uint64_t, unsigned> old = std::move(elements_);
+    std::map<uint64_t, unsigned> old = std::move(elements_);
     elements_.clear();
     for (auto [graph, count] : old) {
-      uint64_t mask = uint64_t(1);
+      uint64_t mask = (uint64_t(1) << 63);
       unsigned end_index = EndIndex<N>();
       for (unsigned i = 0; i < end_index; ++i) {
         const char *segment = segment_table[i];
         if (segment[0] != 0 && (mask & graph) == 0) {
           TestNewItem(mask | graph);
         }
-        mask <<= 1;
+        mask >>= 1;
       }
     }
   }
 
   void DumpElements() {
+    std::map<uint64_t, unsigned, CompareGraph> sorted_elements;
+    for (const auto &elem : elements_) {
+    retry:
+      uint64_t largest = elem.first;
+      AdjacentSwapPermutation p[N];
+      p[0].Initialize(N);
+      uint64_t candidate = largest;
+      for (;;) {
+        int pos = p[0].Next();
+        if (pos < 0) break;
+        candidate = mr_.ApplySwap(candidate, pos);
+        if (GraphIsGreater(candidate, largest)) largest = candidate;
+      }
+      candidate = mr_.ApplySwap(candidate, 0);
+      if (candidate != elem.first) abort();
+      if (level_ > 0 && (~largest & (uint64_t(1) << 63))) abort();
+      sorted_elements[largest] = elem.second;
+    }
+
     uint64_t total = 0;
-    for (auto [graph, count] : elements_) {
+    for (auto [graph, count] : sorted_elements) {
       total += count;
-      printf("%016lX; %u %s\n", graph, count, mr_.Segments(graph).c_str());
+      printf("%s %u\n", mr_.Segments(graph).c_str(), count);
     }
     uint64_t expected = 1;
     if (level_) {
@@ -288,7 +341,7 @@ class LevelManager {
         --num;
       }
     }
-    printf("Total: %lu %lu\n", total, expected);
+    // printf("Total: %lu %lu\n", total, expected);
     if (total != expected) abort();
   }
 
@@ -329,8 +382,8 @@ class LevelManager {
     AdjacentSwapPermutation asp[N];
     std::vector<int> bases;
 
-    uint64_t min_code = graph;
-    if (elements_.find(min_code) != elements_.end()) return;
+    uint64_t max_code = graph;
+    if (elements_.find(max_code) != elements_.end()) return;
     std::set<uint64_t> all_codes;
     for (int i = 0; i < N; ++i) {
       if (bases.empty() || combined[bases.back()] != combined[i]) bases.push_back(i);
@@ -373,9 +426,7 @@ class LevelManager {
           remain -= singletons;
           if (remain < 0) abort();
           factor /= Factorial(remain);
-          elements_[min_code] = all_codes.size() * factor;
-
-          //          printf("insert %lx\n", min_code);
+          elements_[max_code] = all_codes.size() * factor;
           return;
         }
         --p;
@@ -384,9 +435,9 @@ class LevelManager {
       }
       graph = mr_.ApplySwap(graph, swap + col);
       all_codes.insert(graph);
-      if (graph < min_code) {
-        min_code = graph;
-        if (elements_.find(min_code) != elements_.end()) return;
+      if (graph > max_code) {
+        max_code = graph;
+        if (elements_.find(max_code) != elements_.end()) return;
       }
     }
   }
@@ -394,7 +445,7 @@ class LevelManager {
   EdgeCount<N> ec_;
   TriangleCount<N> tc_;
   unsigned level_ = 0;
-  btree::btree_map<uint64_t, unsigned> elements_;
+  std::map<uint64_t, unsigned> elements_;
 };
 
 int main(int argc, char *argv[]) {
@@ -409,13 +460,15 @@ int main(int argc, char *argv[]) {
   }
 
   auto enumerate = [](auto *lm) {
-    printf("Level 0 count %lu\n", lm->Size());
-    lm->DumpElements();
+    //    printf("Level 0 count %lu\n", lm->Size());
+    ///    lm->DumpElements();
     time_t prev = time(nullptr);
     for (int i = 1; i <= lm->MaxLevel(); ++i) {
       lm->NextLevel();
       time_t now = time(nullptr);
-      printf("Level %d count %lu elapsed %u\n", i, lm->Size(), unsigned(now - prev));
+      printf("Level %d\n", i);
+      //      printf("Level %d count %lu elapsed %u\n", i, lm->Size(), unsigned(now -
+      //      prev));
       prev = now;
       lm->DumpElements();
     }
