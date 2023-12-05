@@ -6,8 +6,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <boost/foreach.hpp>
-#include <boost/lexical_cast.hpp>
 #include <fstream>
 #include <iostream>
 #include <map>
