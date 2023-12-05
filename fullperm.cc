@@ -219,6 +219,8 @@ class Orbits {
 };
 
 int main(int argc, char *argv[]) {
+  nsetsize = argc > 1 ? atoi(argv[1]) : 0;
+  if (nsetsize < 4) nsetsize = 4;
   for (int i = 2; i <= nsetsize; ++i) GenerateSwaps(i);
   AnalyzeSegmentTable();
   class Orbits o;
