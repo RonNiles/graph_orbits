@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -12,6 +14,57 @@
 #include <set>
 #include <string>
 #include <vector>
+
+void ReserveMemory() {
+  size_t num_bytes = size_t(1) * 1024 * 1024 * 1024;
+  void *res = mmap(nullptr, num_bytes, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (res == MAP_FAILED) {
+    perror("mmap");
+    exit(1);
+  }
+  constexpr size_t kPageSize = 4096;
+  uint8_t *ptr = static_cast<uint8_t *>(res);
+  struct timespec ts0, ts1;
+  clock_gettime(CLOCK_MONOTONIC, &ts0);
+  for (size_t i = 0; i < num_bytes; i += kPageSize) {
+    ptr[i] = '\0';
+  }
+  clock_gettime(CLOCK_MONOTONIC, &ts1);
+  uint64_t ns0 = ts0.tv_sec * 1000000000 + ts0.tv_nsec;
+  uint64_t ns1 = ts1.tv_sec * 1000000000 + ts1.tv_nsec;
+  uint64_t diff = ns1 - ns0;
+  ldiv_t dt = ldiv(diff, 1000000000);
+  printf("Populate %lu.%09lu\n", dt.quot, dt.rem);
+
+  uint8_t data[4096];
+  for (int i = 0; i < sizeof(data); ++i) data[i] = (i * 93) % 71;
+  clock_gettime(CLOCK_MONOTONIC, &ts0);
+  for (size_t i = 0; i < num_bytes; i += kPageSize) {
+    memcpy(data, ptr + i, kPageSize);
+  }
+  clock_gettime(CLOCK_MONOTONIC, &ts1);
+  ns0 = ts0.tv_sec * 1000000000 + ts0.tv_nsec;
+  ns1 = ts1.tv_sec * 1000000000 + ts1.tv_nsec;
+  diff = ns1 - ns0;
+  dt = ldiv(diff, 1000000000);
+  printf("Write %lu.%09lu\n", dt.quot, dt.rem);
+  dt = ldiv(num_bytes * 1000, diff);
+  printf("Write %lu Mbytes/sec\n", dt.quot);
+
+  clock_gettime(CLOCK_MONOTONIC, &ts0);
+  for (size_t i = 0; i < num_bytes; i += kPageSize) {
+    memcpy(ptr + i, data, kPageSize);
+  }
+  clock_gettime(CLOCK_MONOTONIC, &ts1);
+  ns0 = ts0.tv_sec * 1000000000 + ts0.tv_nsec;
+  ns1 = ts1.tv_sec * 1000000000 + ts1.tv_nsec;
+  diff = ns1 - ns0;
+  dt = ldiv(diff, 1000000000);
+  printf("Read %lu.%09lu\n", dt.quot, dt.rem);
+  dt = ldiv(num_bytes * 1000, diff);
+  printf("Read %lu Mbytes/sec\n", dt.quot);
+}
 
 /* the initial set 1...n, specify n as "nsetsize" */
 unsigned nsetsize = 8;
@@ -219,6 +272,7 @@ class Orbits {
 };
 
 int main(int argc, char *argv[]) {
+  ReserveMemory();
   nsetsize = argc > 1 ? atoi(argv[1]) : 0;
   if (nsetsize < 4) nsetsize = 4;
   for (int i = 2; i <= nsetsize; ++i) GenerateSwaps(i);
